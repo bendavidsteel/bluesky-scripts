@@ -104,37 +104,22 @@ def main():
 
     repos = list(repos)[:count]
 
+    data_dir_path = "./data"
+
     max_tries = 3
     dfs = {}
     for repo in tqdm.tqdm(repos):
-        num_tries = 0
-        while num_tries < max_tries:
-            num_tries += 1
+        tries = 0
+        while tries < max_tries:
             try:
-                res = get_repo(base_url, repo['did'], repo['head'])
-                # decode response
-                for cid, block in res.blocks.items():
-                    if '$type' in block:
-                        if block['$type'] in dfs:
-                            dfs[block['$type']].append(block)
-                        else:
-                            dfs[block['$type']] = [block]
-                    elif 'e' in block:
-                        # TODO use this data too somehow
-                        pass
-                break
-            except:
+                r = subprocess.run(["../../cookbook/go-repo-export/go-export-repo", "download-repo", repo['did']], check=True, capture_output=True, cwd=data_dir_path)
+                path_to_car_file = f"{repo['did']}.car"
+                r = subprocess.run(["../../cookbook/go-repo-export/go-export-repo", "unpack-records", path_to_car_file], check=True, capture_output=True, cwd=data_dir_path)
+            except subprocess.CalledProcessError as e:
+                tries += 1
                 continue
-        
-        validate = True
-        if validate:
-            # also export repo using go cli, and compare outputs
-            subprocess.run([""])
-
-    for k, v in dfs.items():
-        print(f"{k}: {len(v)}")
-        df = pd.DataFrame(v)
-        df.to_parquet(f"{k}.parquet.gzip", compression='gzip')
+            else:
+                break
 
 if __name__ == '__main__':
     main()
