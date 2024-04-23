@@ -1,0 +1,4 @@
+pandas
+atproto
+requests
+tqdm

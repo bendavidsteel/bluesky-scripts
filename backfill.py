@@ -3,9 +3,9 @@ import os
 
 import atproto
 import atproto.exceptions
-from multiformats import CID
 import pandas as pd
 import requests
+import subprocess
 import tqdm
 
 def read_car_bytes(car_bytes, cid):
@@ -99,21 +99,37 @@ def main():
     # base_url = 'https://public.api.bsky.app/xrpc'
     # client._base_url = base_url
 
-    count = 10
+    count = 10000
     repos = get_repos(base_url, count)
 
     repos = list(repos)[:count]
 
+    max_tries = 3
     dfs = {}
     for repo in tqdm.tqdm(repos):
-        res = get_repo(base_url, repo['did'], repo['head'])
-        # decode response
-        for cid, block in res.blocks.items():
-            if '$type' in block:
-                if block['$type'] in dfs:
-                    dfs[block['$type']].append(block)
-                else:
-                    dfs[block['$type']] = [block]
+        num_tries = 0
+        while num_tries < max_tries:
+            num_tries += 1
+            try:
+                res = get_repo(base_url, repo['did'], repo['head'])
+                # decode response
+                for cid, block in res.blocks.items():
+                    if '$type' in block:
+                        if block['$type'] in dfs:
+                            dfs[block['$type']].append(block)
+                        else:
+                            dfs[block['$type']] = [block]
+                    elif 'e' in block:
+                        # TODO use this data too somehow
+                        pass
+                break
+            except:
+                continue
+        
+        validate = True
+        if validate:
+            # also export repo using go cli, and compare outputs
+            subprocess.run([""])
 
     for k, v in dfs.items():
         print(f"{k}: {len(v)}")
