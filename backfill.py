@@ -1,4 +1,6 @@
-import asyncio
+import collections
+import datetime
+import json
 import os
 
 import atproto
@@ -64,12 +66,6 @@ def get_repos(base_url, count):
     #     yield repo
 
 def get_repo(base_url, did, head):
-    # response = requests.request(
-    #     "POST",
-    #     "https://bsky.social/xrpc/com.atproto.server.createSession",
-    #     headers={"Content-Type": "application/json"},
-    #     json={"identifier": os.environ.get('BSKY_USERNAME'), "password": os.environ.get('BSKY_PASSWORD')}
-    # )
     response = requests.request(
         "GET",
         f"{base_url}/com.atproto.sync.getRepo?did={did}",
@@ -106,20 +102,41 @@ def main():
 
     data_dir_path = "./data"
 
+    data_types = ["app.bsky.actor.profile", "app.bsky.feed.like", "app.bsky.feed.post", "app.bsky.graph.follow"]
+
     max_tries = 3
-    dfs = {}
+    current_batch = 0
+    batch_size = 1000
+    dfs = collections.defaultdict(list)
     for repo in tqdm.tqdm(repos):
+        current_batch += 1
         tries = 0
         while tries < max_tries:
             try:
                 r = subprocess.run(["../../cookbook/go-repo-export/go-export-repo", "download-repo", repo['did']], check=True, capture_output=True, cwd=data_dir_path)
                 path_to_car_file = f"{repo['did']}.car"
                 r = subprocess.run(["../../cookbook/go-repo-export/go-export-repo", "unpack-records", path_to_car_file], check=True, capture_output=True, cwd=data_dir_path)
+                os.remove(os.path.join(data_dir_path, path_to_car_file))
+                for data_type in data_types:
+                    for filename in os.listdir(os.path.join(data_dir_path, repo['did'], data_type)):
+                        with open(os.path.join(data_dir_path, repo['did'], data_type, filename)) as f:
+                            data = json.load(f)
+                            dfs[data_type].append(data)
+                with open(os.path.join(data_dir_path, repo['did'], "_commit.json")) as f:
+                    commit = json.load(f)
+                    dfs["commit"].append(commit)
+                os.remove(os.path.join(data_dir_path, repo['did']))
             except subprocess.CalledProcessError as e:
                 tries += 1
                 continue
             else:
                 break
+
+        if current_batch % batch_size == 0:
+            for data_type, data in dfs.items():
+                df = pd.DataFrame(data)
+                df.to_parquet(os.path.join(data_dir_path, f"{data_type}_{datetime.datetime.now().isoformat()}.parquet.gzip"), compression="gzip")
+            dfs = collections.defaultdict(list)
 
 if __name__ == '__main__':
     main()
