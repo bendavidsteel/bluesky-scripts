@@ -1,4 +1,4 @@
-import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import os
 
 import atproto
@@ -7,6 +7,11 @@ import pandas as pd
 import requests
 import subprocess
 import tqdm
+
+def thread_map(*args, function=None, num_workers=10):
+    assert function is not None, "function must be provided"
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        return list(executor.map(function, *args))
 
 def read_car_bytes(car_bytes, cid):
     data = atproto.CAR.from_bytes(car_bytes)
