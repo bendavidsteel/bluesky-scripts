@@ -2,6 +2,7 @@ import collections
 import datetime
 import json
 import os
+import shutil
 
 import atproto
 import atproto.exceptions
@@ -9,10 +10,6 @@ import pandas as pd
 import requests
 import subprocess
 import tqdm
-
-def read_car_bytes(car_bytes, cid):
-    data = atproto.CAR.from_bytes(car_bytes)
-    return data
 
 def get_repos(base_url, count):
     try:
@@ -34,7 +31,6 @@ def get_repos(base_url, count):
         headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
-            # 'Authorization': f"Bearer {response.json()['accessJwt']}"
         }
 
         amount_yielded = 0
@@ -57,45 +53,11 @@ def get_repos(base_url, count):
             for repo in ret['repos']:
                 yield repo
 
-    # for repo in response.json()['repos']:
-    #     yield repo
-    # pds = "https://bsky.network"
-    # client = atproto.Client(base_url=f'{pds}/xrpc')
-    # repos = client.com.atproto.sync.list_repos().repos
-    # for repo in repos:
-    #     yield repo
-
-def get_repo(base_url, did, head):
-    response = requests.request(
-        "GET",
-        f"{base_url}/com.atproto.sync.getRepo?did={did}",
-        headers={"Content-Type": "application/json"},
-        # json={"params": {"did": did}}
-    )
-    if response.status_code != 200:
-        raise Exception(f"Failed to fetch repo: {response.text}")
-    
-    data = read_car_bytes(response.content, head)
-    
-    return data
-    # client = atproto.Client(base_url=base_url)
-    # return client.com.atproto.sync.get_repo({"did": did})
 
 def main():
-    username = os.environ.get('BSKY_USERNAME')
-    password = os.environ.get('BSKY_PASSWORD')
-
-    # base_url = 'https://bsky.social/xrpc'
-    # base_url = 'https://lionsmane.us-east.host.bsky.network/xrpc'
     base_url = 'https://bsky.network/xrpc'
-    
-    client = atproto.Client(base_url=base_url)
-    # client.login(username, password)
 
-    # base_url = 'https://public.api.bsky.app/xrpc'
-    # client._base_url = base_url
-
-    count = 10000
+    count = 100000
     repos = get_repos(base_url, count)
 
     repos = list(repos)[:count]
@@ -109,6 +71,7 @@ def main():
     batch_size = 1000
     dfs = collections.defaultdict(list)
     for repo in tqdm.tqdm(repos):
+        # TODO make this multi-threadedd
         current_batch += 1
         tries = 0
         while tries < max_tries:
@@ -118,6 +81,8 @@ def main():
                 r = subprocess.run(["../../cookbook/go-repo-export/go-export-repo", "unpack-records", path_to_car_file], check=True, capture_output=True, cwd=data_dir_path)
                 os.remove(os.path.join(data_dir_path, path_to_car_file))
                 for data_type in data_types:
+                    if not os.path.exists(os.path.join(data_dir_path, repo['did'], data_type)):
+                        continue
                     for filename in os.listdir(os.path.join(data_dir_path, repo['did'], data_type)):
                         with open(os.path.join(data_dir_path, repo['did'], data_type, filename)) as f:
                             data = json.load(f)
@@ -125,7 +90,7 @@ def main():
                 with open(os.path.join(data_dir_path, repo['did'], "_commit.json")) as f:
                     commit = json.load(f)
                     dfs["commit"].append(commit)
-                os.remove(os.path.join(data_dir_path, repo['did']))
+                shutil.rmtree(os.path.join(data_dir_path, repo['did']))
             except subprocess.CalledProcessError as e:
                 tries += 1
                 continue
